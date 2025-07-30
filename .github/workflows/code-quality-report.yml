@@ -1,0 +1,318 @@
+name: Code Quality Report
+
+on:
+  push:
+    branches: [review]
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install Required Packages
+        run: npm install octokit
+
+      - name: Generate Report
+        env:
+          GITHUB_TOKEN: ${{ secrets.DD_GITHUB_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          # Store commit hash and repo name for artifact
+          echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "REPO_NAME=$(basename $GITHUB_REPOSITORY)" >> $GITHUB_ENV
+
+          node --input-type=module -e '
+          import { Octokit } from "octokit";
+          import fs from "fs";
+          import path from "path";
+          import { fileURLToPath } from "url";
+          import { dirname } from "path";
+
+          const __filename = fileURLToPath(import.meta.url);
+          const __dirname = dirname(__filename);
+
+          async function generateReport() {
+            try {
+              const octokit = new Octokit({
+                auth: process.env.GITHUB_TOKEN
+              });
+              
+              const owner = process.env.GITHUB_REPOSITORY.split("/")[0];
+              const repo = process.env.GITHUB_REPOSITORY.split("/")[1];
+              
+              async function fetchFileContents(path = "") {
+                const { data: files } = await octokit.rest.repos.getContent({
+                  owner,
+                  repo,
+                  path
+                });
+                
+                if (!Array.isArray(files)) return [];
+                
+                const fileContents = await Promise.all(
+                  files.map(async (file) => {
+                    if (file.type === "file") {
+                      const { data } = await octokit.rest.repos.getContent({
+                        owner,
+                        repo,
+                        path: file.path,
+                        mediaType: { format: "raw" }
+                      });
+                      return {
+                        path: file.path,
+                        content: typeof data === "string" ? data : ""
+                      };
+                    }
+                    if (file.type === "dir") {
+                      return fetchFileContents(file.path);
+                    }
+                    return null;
+                  })
+                );
+                
+                return fileContents.flat().filter(Boolean);
+              }
+              
+              const allFiles = await fetchFileContents();
+              
+              // Prepare the system message and analysis prompt
+              const systemMessage = `You are a code quality analysis expert. You will analyze codebases and provide detailed, 
+                constructive feedback focusing on best practices, maintainability, and potential improvements.
+                Focus on providing actionable insights that can help improve the codebase.`;
+              
+              const analysisPrompt = `
+                Analyze the following codebase and generate a comprehensive markdown report:
+                
+                Repository: ${process.env.GITHUB_REPOSITORY}
+                Owner: ${owner}
+                Repo: ${repo}
+                Total Files: ${allFiles.length}
+                
+                Files and Snippets:
+                ${allFiles.slice(0, 10).map(file => 
+                  `### ${file.path}\n\`\`\`\n${file.content.slice(0, 500)}\n\`\`\`\n`
+                ).join("\n")}
+                
+                # Code Quality Assessment 🔍
+                
+                ### 1. Code Architecture and Structure
+                Evaluate and provide specific examples for:
+                - Project organization and file structure
+                - Component/module architecture
+                - Code separation and modularity
+                - Design patterns used (or opportunities to use them)
+                - Dependencies and their management
+                
+                ### 2. Code Quality Metrics
+                For each aspect, provide a score (0-10) and detailed explanation with examples:
+                📖 Readability:
+                - Naming conventions
+                - Code formatting
+                - Comment quality and placement
+                
+                🔧 Maintainability:
+                - Code complexity
+                - Function/method size
+                - Code duplication
+                - Separation of concerns
+                
+                ⚡ Performance:
+                - Resource usage
+                - Optimization opportunities
+                - Caching strategies
+                - Bottlenecks
+                
+                🛡️ Security:
+                - Input validation
+                - Authentication/Authorization
+                - Data protection
+                - API security
+                
+                ### 3. Testing and Quality Assurance
+                Analyze:
+                - Test coverage and quality
+                - Types of tests present
+                - Missing critical tests
+                - Testing best practices
+                
+                ### 4. Documentation
+                Review:
+                - API documentation
+                - Code comments
+                - README quality
+                - Setup instructions
+                
+                # Actionable Recommendations 🎯
+                
+                ### High-Priority Improvements
+                List 3-5 critical improvements that would have the highest impact:
+                1. [Improvement Name]
+                   - Current Issue
+                   - Proposed Solution
+                   - Implementation Steps
+                   - Expected Impact
+                
+                ### Technical Debt
+                Identify areas of technical debt:
+                - Current pain points
+                - Risk assessment
+                - Suggested refactoring approach
+                - Priority level
+                
+                ### Best Practices Implementation
+                For each category below, provide specific examples from the code and suggested improvements:
+                1. Code Organization
+                   - Current patterns
+                   - Recommended changes
+                   - Example refactoring
+                
+                2. Error Handling
+                   - Current approach
+                   - Improvement opportunities
+                   - Example implementation
+                
+                3. Performance Optimization
+                   - Identified bottlenecks
+                   - Optimization strategies
+                   - Implementation guide
+                
+                ### Future-Proofing Recommendations
+                Suggest improvements for:
+                - Scalability
+                - Maintainability
+                - Technology updates
+                - Architecture evolution
+                
+                # Implementation Roadmap 🗺️
+                
+                ### Quick Wins (1-2 days)
+                List immediate improvements that can be implemented quickly:
+                - Specific files/components to target
+                - Exact changes needed
+                - Expected benefits
+                
+                ### Short-Term Goals (2-4 weeks)
+                Outline improvements that require moderate effort:
+                - Prioritized tasks
+                - Implementation approach
+                - Resource requirements
+                
+                ### Long-Term Vision
+                Suggest strategic improvements:
+                - Architecture evolution
+                - Technology adoption
+                - Team practices
+                - Monitoring and maintenance
+                
+                Format the response in markdown with:
+                - Clear section headings
+                - Code examples for each major point
+                - Specific file references
+                - Prioritized recommendations
+              `;
+
+              // Make request to Groq API directly
+              const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  model: "mixtral-8x7b-32768",
+                  messages: [
+                    { role: "system", content: systemMessage },
+                    { role: "user", content: analysisPrompt }
+                  ],
+                  temperature: 0.2,
+                  max_tokens: 4000
+                })
+              });
+
+              if (!response.ok) {
+                const error = await response.json();
+                throw new Error(`Groq API error: ${error.error?.message || "Unknown error"}`);
+              }
+
+              const completion = await response.json();
+              const report = completion.choices[0].message.content;
+              
+              const commitHash = process.env.GITHUB_SHA.substring(0, 8);
+              const reportsDir = "reports";
+              const reportPath = path.join(reportsDir, `report-${commitHash}.md`);
+              
+              // Create reports directory if it does not exist
+              if (!fs.existsSync(reportsDir)) {
+                fs.mkdirSync(reportsDir, { recursive: true });
+              }
+              
+              fs.writeFileSync(reportPath, report);
+              
+              // Create or update PR with the report
+              const branchName = "code-quality-report";
+              await octokit.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/heads/${branchName}`,
+                sha: process.env.GITHUB_SHA
+              }).catch(() => {});
+              
+              await octokit.rest.repos.createOrUpdateFileContents({
+                owner,
+                repo,
+                path: reportPath,
+                message: `Update code quality report for commit ${commitHash}`,
+                content: Buffer.from(report).toString("base64"),
+                branch: branchName
+              });
+              
+              const existingPR = await octokit.rest.pulls.list({
+                owner,
+                repo,
+                head: `${owner}:${branchName}`,
+                state: "open"
+              });
+              
+              if (existingPR.data.length === 0) {
+                await octokit.rest.pulls.create({
+                  owner,
+                  repo,
+                  title: `📊 Code Quality Analysis Report for ${commitHash}`,
+                  head: branchName,
+                  base: "main",
+                  body: `This PR contains a detailed code quality analysis with actionable recommendations for commit ${commitHash}.
+
+                  ## Report Highlights
+                  - Architecture and structure analysis
+                  - Code quality metrics with examples
+                  - High-priority improvements
+                  - Technical debt assessment
+                  - Implementation roadmap
+                  `
+                });
+              }
+              
+            } catch (error) {
+              console.error("Failed to generate report:", error);
+              process.exit(1);
+            }
+          }
+
+          generateReport();
+          '
+
+      - name: Upload Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-report-${{ env.REPO_NAME }}-${{ env.COMMIT_HASH }}
+          path: reports/*.md

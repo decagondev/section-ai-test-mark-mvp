@@ -1,0 +1,18 @@
+reviewers:
+  groups:
+    default-reviewers:
+      - decagondev # Tom Tarpey
+      - MichaelHabermas # Michael Habermas
+
+    defaults: # Reviewers assigned when no reviewers are matched
+      - default-reviewers
+
+files:
+  "**/*":
+    - default-reviewers
+
+options:
+  ignore-drafts: true
+  ignored_keywords:
+    - DO NOT REVIEW
+  enable-group-assignment: true

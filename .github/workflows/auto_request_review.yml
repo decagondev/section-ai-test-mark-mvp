@@ -1,0 +1,17 @@
+name: Auto Request Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+jobs:
+  auto_request_review:
+    name: Auto Request Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto Request Review
+        uses: necojackarc/auto-request-review@v0.13.0
+        with:
+          token: ${{ secrets.DD_GITHUB_TOKEN }}
+          config: .github/reviewers.yml
+          use_local: false

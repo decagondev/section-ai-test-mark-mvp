@@ -1,0 +1,32 @@
+# Copy this file to .env and fill in your actual values
+# DO NOT commit this file to version control
+
+# Server Configuration
+NODE_ENV=development
+PORT=3001
+
+# Database Configuration - GET FROM MONGODB ATLAS
+MONGODB_URI=mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@YOUR_CLUSTER.mongodb.net/deca-test-mark?retryWrites=true&w=majority
+
+# AI Service Configuration - GET FROM GROQ CONSOLE
+GROQ_API_KEY=gsk_YOUR_GROQ_API_KEY_HERE
+
+# Frontend Configuration
+FRONTEND_URL=http://localhost:5173
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# Authentication Configuration
+JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
+JWT_EXPIRES_IN=7d
+
+# Processing Configuration
+MAX_PROCESSING_TIME=300
+MAX_CONCURRENT_JOBS=5
+TEMP_DIR_PREFIX=deca-temp
+
+# Logging Configuration
+LOG_LEVEL=info
+LOG_FILE=logs/app.log 
+
+# OpenAI API Key (for code quality analysis)
+OPENAI_API_KEY=sk-... 
