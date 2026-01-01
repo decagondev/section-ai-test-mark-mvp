@@ -312,7 +312,7 @@ jobs:
           '
 
       - name: Upload Report Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: code-quality-report-${{ env.REPO_NAME }}-${{ env.COMMIT_HASH }}
           path: reports/*.md
